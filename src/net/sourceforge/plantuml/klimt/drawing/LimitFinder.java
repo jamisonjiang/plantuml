@@ -5,12 +5,12 @@
  * (C) Copyright 2009-2024, Arnaud Roques
  *
  * Project Info:  https://plantuml.com
- * 
+ *
  * If you like this project or if you find it useful, you can support us at:
- * 
+ *
  * https://plantuml.com/patreon (only 1$ per month!)
  * https://plantuml.com/paypal
- * 
+ *
  * This file is part of PlantUML.
  *
  * PlantUML is free software; you can redistribute it and/or modify it
@@ -30,7 +30,7 @@
  *
  *
  * Original Author:  Arnaud Roques
- * 
+ *
  *
  */
 package net.sourceforge.plantuml.klimt.drawing;
@@ -182,6 +182,8 @@ public final class LimitFinder extends UGraphicNo {
 		final MinMax shapeMinMax = shape.getMinMax();
 		addPoint(x + shapeMinMax.getMinX(), y + shapeMinMax.getMinY());
 		addPoint(x + shapeMinMax.getMaxX(), y + shapeMinMax.getMaxY());
+//		addPoint(x, y);
+//		addPoint(x, y);
 	}
 
 	private void drawImage(double x, double y, UImage shape) {

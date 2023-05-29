@@ -53,6 +53,7 @@ import net.sourceforge.plantuml.klimt.shape.TextBlock;
 import net.sourceforge.plantuml.skin.AlignmentParam;
 import net.sourceforge.plantuml.skin.UmlDiagramType;
 import net.sourceforge.plantuml.style.ISkinParam;
+import net.sourceforge.plantuml.svek.DotStringFactory.GraphvizContext;
 import net.sourceforge.plantuml.utils.Position;
 
 public class ClusterDotStringKermor {
@@ -68,7 +69,7 @@ public class ClusterDotStringKermor {
 	}
 
 	void printInternal(StringBuilder sb, Collection<SvekLine> lines, StringBounder stringBounder, DotMode dotMode,
-			GraphvizVersion graphvizVersion, UmlDiagramType type) {
+			GraphvizVersion graphvizVersion, UmlDiagramType type, GraphvizContext graphvizContext) {
 
 		final Set<EntityPosition> entityPositionsExceptNormal = entityPositionsExceptNormal();
 		if (entityPositionsExceptNormal.size() > 0)
@@ -149,7 +150,7 @@ public class ClusterDotStringKermor {
 		sb.append("label=" + label + ";");
 		SvekUtils.println(sb);
 
-		cluster.printCluster3_forKermor(sb, lines, stringBounder, dotMode, graphvizVersion, type);
+		cluster.printCluster3_forKermor(sb, lines, stringBounder, dotMode, graphvizVersion, type, graphvizContext);
 
 		SvekUtils.println(sb);
 		printRanks(Cluster.RANK_SINK, cluster.getNodes(EntityPosition.getOutputs()), sb, stringBounder);

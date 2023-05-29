@@ -28,6 +28,8 @@ dependencies {
 	testImplementation("org.assertj:assertj-core:3.24.2")
 	testImplementation("org.junit.jupiter:junit-jupiter:5.9.2")
 	testImplementation("org.scilab.forge:jlatexmath:1.0.7")
+//	implementation("org.graphper:graph-support:1.1.2-SNAPSHOT")
+	implementation("org.graphper:graph-support:1.1.2")
 	"pdfRuntimeOnly"("org.apache.xmlgraphics:fop:2.8")
 	"pdfRuntimeOnly"("org.apache.xmlgraphics:batik-all:1.16")
 }

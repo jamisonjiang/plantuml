@@ -84,11 +84,15 @@ import net.sourceforge.plantuml.style.SName;
 import net.sourceforge.plantuml.style.Style;
 import net.sourceforge.plantuml.style.StyleBuilder;
 import net.sourceforge.plantuml.style.StyleSignatureBasic;
+import net.sourceforge.plantuml.svek.DotStringFactory.GraphvizContext;
 import net.sourceforge.plantuml.svek.image.EntityImageNoteLink;
 import net.sourceforge.plantuml.svek.image.EntityImageState;
 import net.sourceforge.plantuml.svek.image.EntityImageStateCommon;
 import net.sourceforge.plantuml.url.Url;
 import net.sourceforge.plantuml.utils.Position;
+
+import org.graphper.api.Node;
+import org.graphper.api.Node.NodeBuilder;
 
 public class Cluster implements Moveable {
 
@@ -482,7 +486,7 @@ public class Cluster implements Moveable {
 
 	private void printTogether(Together together, StringBuilder sb, List<SvekNode> nodesOrderedWithoutTop,
 			StringBounder stringBounder, Collection<SvekLine> lines, DotMode dotMode, GraphvizVersion graphvizVersion,
-			UmlDiagramType type) {
+			UmlDiagramType type, GraphvizContext graphvizContext) {
 		sb.append("subgraph " + getClusterId() + "t" + togetherCounter + " {\n");
 		for (SvekNode node : nodesOrderedWithoutTop)
 			if (node.getTogether() == together)
@@ -490,7 +494,7 @@ public class Cluster implements Moveable {
 
 		for (Cluster child : children)
 			if (child.group.getTogether() == together)
-				child.printInternal(sb, lines, stringBounder, dotMode, graphvizVersion, type);
+				child.printInternal(sb, lines, stringBounder, dotMode, graphvizVersion, type, graphvizContext);
 
 		sb.append("}\n");
 		togetherCounter++;
@@ -498,26 +502,31 @@ public class Cluster implements Moveable {
 	}
 
 	public SvekNode printCluster2(StringBuilder sb, Collection<SvekLine> lines, StringBounder stringBounder,
-			DotMode dotMode, GraphvizVersion graphvizVersion, UmlDiagramType type) {
+			DotMode dotMode, GraphvizVersion graphvizVersion, UmlDiagramType type, GraphvizContext graphvizContext) {
 
 		SvekNode added = null;
 		final Collection<Together> togethers = new LinkedHashSet<>();
 		final List<SvekNode> nodesOrderedWithoutTop = getNodesOrderedWithoutTop(lines);
 		for (SvekNode node : nodesOrderedWithoutTop) {
+			NodeBuilder builder = Node.builder().fixedSize(true);
 			final Together together = node.getTogether();
 			if (together == null)
-				node.appendShape(sb, stringBounder);
+				node.appendShape(sb, stringBounder, builder);
 			else
 				togethers.add(together);
 
 			added = node;
+
+			Node n = builder.build();
+			Node nn = graphvizContext.getIfAbsent(n.nodeAttrs().getLabel(), s -> builder.build());
+			graphvizContext.getCurrentBuilder().addNode(nn);
 		}
 		for (Cluster child : children)
 			if (child.group.getTogether() != null)
 				togethers.add(child.group.getTogether());
 
 		for (Together together : togethers)
-			printTogether(together, sb, nodesOrderedWithoutTop, stringBounder, lines, dotMode, graphvizVersion, type);
+			printTogether(together, sb, nodesOrderedWithoutTop, stringBounder, lines, dotMode, graphvizVersion, type, graphvizContext);
 
 		if (skinParam.useRankSame() && dotMode != DotMode.NO_LEFT_RIGHT_AND_XLABEL
 				&& graphvizVersion.ignoreHorizontalLinks() == false)
@@ -525,13 +534,13 @@ public class Cluster implements Moveable {
 
 		for (Cluster child : children)
 			if (child.group.getTogether() == null)
-				child.printInternal(sb, lines, stringBounder, dotMode, graphvizVersion, type);
+				child.printInternal(sb, lines, stringBounder, dotMode, graphvizVersion, type, graphvizContext);
 
 		return added;
 	}
 
 	public void printCluster3_forKermor(StringBuilder sb, Collection<SvekLine> lines, StringBounder stringBounder,
-			DotMode dotMode, GraphvizVersion graphvizVersion, UmlDiagramType type) {
+			DotMode dotMode, GraphvizVersion graphvizVersion, UmlDiagramType type, GraphvizContext graphvizContext) {
 		final List<SvekNode> tmp = getNodes(EntityPosition.getNormals());
 
 		if (tmp.size() == 0) {
@@ -543,12 +552,12 @@ public class Cluster implements Moveable {
 		}
 
 		for (Cluster child : getChildren())
-			child.printInternal(sb, lines, stringBounder, dotMode, graphvizVersion, type);
+			child.printInternal(sb, lines, stringBounder, dotMode, graphvizVersion, type, graphvizContext);
 	}
 
 	private void printInternal(StringBuilder sb, Collection<SvekLine> lines, StringBounder stringBounder,
-			DotMode dotMode, GraphvizVersion graphvizVersion, UmlDiagramType type) {
-		new ClusterDotString(this, skinParam).printInternal(sb, lines, stringBounder, dotMode, graphvizVersion, type);
+			DotMode dotMode, GraphvizVersion graphvizVersion, UmlDiagramType type, GraphvizContext graphvizContext) {
+		new ClusterDotString(this, skinParam).printInternal(sb, lines, stringBounder, dotMode, graphvizVersion, type, graphvizContext);
 	}
 
 	private void appendRankSame(StringBuilder sb, Collection<SvekLine> lines) {

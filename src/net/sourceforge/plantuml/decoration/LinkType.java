@@ -5,12 +5,12 @@
  * (C) Copyright 2009-2024, Arnaud Roques
  *
  * Project Info:  https://plantuml.com
- * 
+ *
  * If you like this project or if you find it useful, you can support us at:
- * 
+ *
  * https://plantuml.com/patreon (only 1$ per month!)
  * https://plantuml.com/paypal
- * 
+ *
  * This file is part of PlantUML.
  *
  * PlantUML is free software; you can redistribute it and/or modify it
@@ -31,7 +31,7 @@
  *
  * Original Author:  Arnaud Roques
  * Contribution :  Hisashi Miyashita
- * 
+ *
  *
  */
 package net.sourceforge.plantuml.decoration;
@@ -39,6 +39,10 @@ package net.sourceforge.plantuml.decoration;
 import java.util.Objects;
 
 import net.sourceforge.plantuml.klimt.UStroke;
+
+import org.graphper.api.Line.LineBuilder;
+import org.graphper.api.attributes.ArrowShape;
+import org.graphper.api.attributes.Dir;
 
 public class LinkType {
 
@@ -151,7 +155,7 @@ public class LinkType {
 		return new LinkType(decor1, decor2, middleDecor, LinkStyle.INVISIBLE());
 	}
 
-	public String getSpecificDecorationSvek() {
+	public String getSpecificDecorationSvek(LineBuilder lineBuilder) {
 		final StringBuilder sb = new StringBuilder();
 
 		final boolean isEmpty1 = decor1 == LinkDecor.NONE;
@@ -160,6 +164,8 @@ public class LinkType {
 		if (isEmpty1 && isEmpty2) {
 			sb.append("arrowtail=none");
 			sb.append(",arrowhead=none");
+			lineBuilder.arrowTail(ArrowShape.NONE);
+			lineBuilder.arrowHead(ArrowShape.NONE);
 		} else if (isEmpty1 == false && isEmpty2 == false) {
 			sb.append("dir=both,");
 			sb.append("arrowtail=empty");
@@ -168,6 +174,8 @@ public class LinkType {
 			sb.append("arrowtail=empty");
 			sb.append(",arrowhead=none");
 			sb.append(",dir=back");
+			lineBuilder.arrowHead(ArrowShape.NONE);
+			lineBuilder.dir(Dir.BACK);
 			// } else if (isEmpty1 == false && isEmpty2) {
 			// sb.append("arrowtail=none");
 			// sb.append(",arrowhead=empty");
@@ -179,6 +187,7 @@ public class LinkType {
 				sb.append(",");
 
 			sb.append("arrowsize=" + arrowsize);
+			lineBuilder.arrowSize(arrowsize);
 		}
 		return sb.toString();
 	}

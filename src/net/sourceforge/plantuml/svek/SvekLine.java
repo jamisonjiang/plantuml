@@ -35,6 +35,11 @@
  */
 package net.sourceforge.plantuml.svek;
 
+import static org.graphper.api.Html.table;
+import static org.graphper.api.Html.td;
+
+import java.io.ByteArrayInputStream;
+import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.EnumMap;
@@ -42,6 +47,31 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Consumer;
+
+import javax.xml.parsers.DocumentBuilder;
+import javax.xml.parsers.DocumentBuilderFactory;
+import javax.xml.parsers.ParserConfigurationException;
+
+import org.graphper.api.FloatLabel;
+import org.graphper.api.FloatLabel.FloatLabelBuilder;
+import org.graphper.api.Html;
+import org.graphper.api.Html.Table;
+import org.graphper.api.Html.Td;
+import org.graphper.api.Line;
+import org.graphper.api.Line.LineBuilder;
+import org.graphper.api.Node;
+import org.graphper.api.attributes.Color;
+import org.graphper.api.attributes.LineStyle;
+import org.graphper.api.attributes.Tend;
+import org.graphper.def.FlatPoint;
+import org.graphper.draw.LineDrawProp;
+import org.graphper.draw.svg.SvgEditor;
+import org.graphper.util.CollectionUtils;
+import org.w3c.dom.Document;
+import org.w3c.dom.NamedNodeMap;
+import org.w3c.dom.NodeList;
+import org.xml.sax.SAXException;
 
 import net.sourceforge.plantuml.StringUtils;
 import net.sourceforge.plantuml.abel.CucaNote;
@@ -98,6 +128,7 @@ import net.sourceforge.plantuml.skin.rose.Rose;
 import net.sourceforge.plantuml.stereo.Stereotype;
 import net.sourceforge.plantuml.style.ISkinParam;
 import net.sourceforge.plantuml.style.StyleBuilder;
+import net.sourceforge.plantuml.svek.DotStringFactory.GraphvizContext;
 import net.sourceforge.plantuml.svek.extremity.Extremity;
 import net.sourceforge.plantuml.svek.extremity.ExtremityArrow;
 import net.sourceforge.plantuml.svek.extremity.ExtremityFactory;
@@ -364,20 +395,39 @@ public class SvekLine implements Moveable, Hideable, GuideLine {
 	}
 
 	// ::comment when __CORE__
-	public void appendLine(GraphvizVersion graphvizVersion, StringBuilder sb, DotMode dotMode, DotSplines dotSplines) {
+	public void appendLine(GraphvizVersion graphvizVersion, StringBuilder sb, DotMode dotMode, DotSplines dotSplines, GraphvizContext graphvizContext) {
 		// Log.println("inverted=" + isInverted());
 		// if (isInverted()) {
 		// sb.append(endUid);
 		// sb.append("->");
 		// sb.append(startUid);
 		// } else {
+
+		String startUidPrefix = startUid.getPrefix();
+		String endUidPrefix = endUid.getPrefix();
+		Node tail = graphvizContext.getIfAbsent(startUidPrefix, nodeId -> Node.builder()
+						.fixedSize(true).id(startUidPrefix).label(startUidPrefix).build());
+		Node head = graphvizContext.getIfAbsent(endUidPrefix, nodeId -> Node.builder()
+						.fixedSize(true).id(endUidPrefix).label(endUidPrefix).build());
+
+		LineBuilder lineBuilder = Line.builder(tail, head);
+
+		String startPort = startUid.getPortId();
+		String endPort = endUid.getPortId();
+		if (StringUtils.isNotEmpty(startPort)) {
+			lineBuilder.tailCell(startPort);
+		}
+		if (StringUtils.isNotEmpty(endPort)) {
+			lineBuilder.headCell(endPort);
+		}
+
 		sb.append(startUid.getFullString());
 		sb.append("->");
 		sb.append(endUid.getFullString());
 		// }
 		sb.append("[");
 		final LinkType linkType = link.getTypePatchCluster();
-		String decoration = linkType.getSpecificDecorationSvek();
+		String decoration = linkType.getSpecificDecorationSvek(lineBuilder);
 		if (decoration.length() > 0 && decoration.endsWith(",") == false)
 			decoration += ",";
 
@@ -392,13 +442,17 @@ public class SvekLine implements Moveable, Hideable, GuideLine {
 				// if (graphvizVersion.isJs() == false) {
 				sb.append("minlen=" + (length - 1));
 				sb.append(",");
+				lineBuilder.minlen(length - 1);
 				// }
 			}
 		} else {
 			sb.append("minlen=" + (length - 1));
 			sb.append(",");
+			lineBuilder.minlen(length - 1);
 		}
 		sb.append("color=\"" + StringUtils.sharp000000(lineColor) + "\"");
+		lineBuilder.color(Color.ofRGB(StringUtils.sharp000000(lineColor)));
+		StringBuilder t = new StringBuilder();
 		if (hasNoteLabelText() || link.getLinkConstraint() != null) {
 			sb.append(",");
 			if (graphvizVersion.useXLabelInsteadOfLabel() || dotMode == DotMode.NO_LEFT_RIGHT_AND_XLABEL
@@ -410,36 +464,69 @@ public class SvekLine implements Moveable, Hideable, GuideLine {
 			XDimension2D dimNote = hasNoteLabelText() ? labelText.calculateDimension(stringBounder) : CONSTRAINT_SPOT;
 			dimNote = dimNote.delta(2 * labelShield);
 
-			appendTable(sb, eventuallyDivideByTwo(dimNote), noteLabelColor, graphvizVersion);
+
+			Table table = appendTable(t, eventuallyDivideByTwo(dimNote), noteLabelColor, graphvizVersion);
+			lineBuilder.table(table);
+
+			sb.append(t);
 			sb.append(">");
+
 		}
 
+		List<FloatLabel> floatLabels = new ArrayList<>();
 		if (startTailText != null) {
+			t.delete(0, t.length());
 			sb.append(",");
 			sb.append("taillabel=<");
-			appendTable(sb, startTailText.calculateDimension(stringBounder), startTailColor, graphvizVersion);
+			Table table = appendTable(t, startTailText.calculateDimension(stringBounder), startTailColor, graphvizVersion);
+			sb.append(t);
 			sb.append(">");
+
+			FloatLabelBuilder tailLabelBuilder = FloatLabel.builder()
+							.tend(Tend.TAIL)
+							.lengthRatio(0)
+							.table(table);
+
+			floatLabels.add(tailLabelBuilder.build());
 		}
 		if (endHeadText != null) {
+			t.delete(0, t.length());
 			sb.append(",");
 			sb.append("headlabel=<");
-			appendTable(sb, endHeadText.calculateDimension(stringBounder), endHeadColor, graphvizVersion);
+			Table table = appendTable(t, endHeadText.calculateDimension(stringBounder), endHeadColor, graphvizVersion);
+			sb.append(t);
 			sb.append(">");
+
+			FloatLabelBuilder headLabelBuilder = FloatLabel.builder()
+							.tend(Tend.HEAD)
+							.lengthRatio(1)
+							.table(table);
+
+			floatLabels.add(headLabelBuilder.build());
+		}
+
+		if (floatLabels.size() > 0) {
+			lineBuilder.floatLabels(floatLabels.toArray(new FloatLabel[0]));
 		}
 
 		if (link.isInvis()) {
 			sb.append(",");
 			sb.append("style=invis");
+			lineBuilder.style(LineStyle.INVIS);
 		}
 
-		if (link.isConstraint() == false || link.hasTwoEntryPointsSameContainer())
+		if (link.isConstraint() == false || link.hasTwoEntryPointsSameContainer()) {
 			sb.append(",constraint=false");
+			lineBuilder.minlen(0);
+		}
 
 		if (link.getSametail() != null)
 			sb.append(",sametail=" + link.getSametail());
 
 		sb.append("];");
 		SvekUtils.println(sb);
+
+		graphvizContext.graphvizBuilder.addLine(lineBuilder.build());
 	}
 	// ::done
 
@@ -461,16 +548,20 @@ public class SvekLine implements Moveable, Hideable, GuideLine {
 		return null;
 	}
 
-	public static void appendTable(StringBuilder sb, XDimension2D dim, int col, GraphvizVersion graphvizVersion) {
+	public static Table appendTable(StringBuilder sb, XDimension2D dim, int col, GraphvizVersion graphvizVersion) {
 		final int w = (int) dim.getWidth();
 		final int h = (int) dim.getHeight();
 		appendTable(sb, w, h, col);
+		return newTable(w, h, col);
 	}
 
-	public static void appendTable(StringBuilder sb, int w, int h, int col) {
+	public static Table appendTable(StringBuilder sb, int w, int h, int col) {
+		Table table = table();
 		sb.append("<TABLE ");
 		sb.append("BGCOLOR=\"" + StringUtils.sharp000000(col) + "\" ");
+		table.bgColor(Color.ofRGB(StringUtils.sharp000000(col)));
 		sb.append("FIXEDSIZE=\"TRUE\" WIDTH=\"" + w + "\" HEIGHT=\"" + h + "\">");
+		table.fixedSize(true).width(w).height(h);
 		sb.append("<TR");
 		sb.append(">");
 		sb.append("<TD");
@@ -479,7 +570,15 @@ public class SvekLine implements Moveable, Hideable, GuideLine {
 		sb.append(">");
 		sb.append("</TD>");
 		sb.append("</TR>");
+		table.tr(td());
 		sb.append("</TABLE>");
+		return table;
+	}
+
+	public static Table newTable(int w, int h, int col) {
+		return table().bgColor(Color.ofRGB(StringUtils.sharp000000(col)))
+						.fixedSize(true).width(w).height(h)
+						.tr(td());
 	}
 
 	public final String getStartUidPrefix() {
@@ -513,7 +612,7 @@ public class SvekLine implements Moveable, Hideable, GuideLine {
 
 		if (extremityFactory != null) {
 			final List<XPoint2D> points = pointListIterator.next();
-			if (points.size() == 0) 
+			if (points.size() == 0)
 				return null;
 				// throw new IllegalStateException();
 				// return extremityFactory.createUDrawable(center, angle, null);
@@ -547,7 +646,43 @@ public class SvekLine implements Moveable, Hideable, GuideLine {
 
 	}
 
-	public void solveLine(SvgResult fullSvg) {
+	public void solveLine0(Point2DFunction moveFunc, Map<String, LineDrawProp> lineDrawPropMap) {
+		if (lineDrawPropMap == null) {
+			return;
+		}
+		LineDrawProp lineDrawProp = lineDrawPropMap.get(StringUtils.sharp000000(lineColor));
+		if (CollectionUtils.isEmpty(lineDrawProp)) {
+			return;
+		}
+
+//		System.out.println("graph support line before " + Arrays.toString(lineDrawProp.toArray(new FlatPoint[0])));
+
+		String path;
+		List<FlatPoint> curves;
+		if (lineDrawProp.isBesselCurve()) {
+			curves = lineDrawProp;
+		} else {
+			curves = new ArrayList<>();
+			curves.add(lineDrawProp.getStart());
+			for (int i = 1; i < lineDrawProp.size(); i++) {
+				FlatPoint p = lineDrawProp.get(i - 1);
+				FlatPoint c = lineDrawProp.get(i);
+				curves.add(p);
+				curves.add(c);
+				curves.add(c);
+			}
+		}
+
+		path = SvgEditor.pointsToSvgLine(lineDrawProp.getStart(), curves, true);
+
+		SvgResult pathResult = new SvgResult(path, moveFunc);
+		dotPath = pathResult.toDotPath();
+//		System.out.println("line after " + dotPath);
+//		dotPath = dotPath.simulateCompound(lhead == null ? null : lhead.getRectangleArea(),
+//		                                   ltail == null ? null : ltail.getRectangleArea());
+	}
+
+	public void solveLine(SvgResult fullSvg, SvgResult debug) {
 		if (this.link.isInvis())
 			return;
 
@@ -567,6 +702,10 @@ public class SvekLine implements Moveable, Hideable, GuideLine {
 			return;
 
 		dotPath = path.toDotPath();
+
+		if (1 == 1) {
+			return;
+		}
 
 		if (projectionCluster != null) {
 			// System.err.println("Line::solveLine1 projectionCluster=" +
@@ -1150,4 +1289,103 @@ public class SvekLine implements Moveable, Hideable, GuideLine {
 		dotPath.moveEndPoint(dx, dy);
 	}
 
+	private String tableHandle(String table, Consumer<Table> tableConsumer) {
+		try {
+			ByteArrayInputStream is = new ByteArrayInputStream(table.toLowerCase().getBytes());
+			DocumentBuilderFactory dbf = DocumentBuilderFactory.newInstance();
+			DocumentBuilder db = dbf.newDocumentBuilder();
+			Document document = db.parse(is);
+			parseTable(tableConsumer, document.getChildNodes());
+		} catch (ParserConfigurationException e) {
+			throw new RuntimeException(e);
+		} catch (SAXException e) {
+			throw new RuntimeException(e);
+		} catch (IOException e) {
+			throw new RuntimeException(e);
+		}
+		return null;
+	}
+
+	private static void parseTable(Consumer<Table> tableConsumer, NodeList html) {
+		for (int i = 0; i < html.getLength(); i++) {
+			org.w3c.dom.Node t = html.item(i);
+			if (!"table".equalsIgnoreCase(t.getNodeName())) {
+				continue;
+			}
+			Table htmlTable = Html.table();
+			NodeList childNodes = t.getChildNodes();
+
+			NamedNodeMap attributes = t.getAttributes();
+			if (attributes != null) {
+				org.w3c.dom.Node cellspacing = attributes.getNamedItem("cellspacing");
+				if (cellspacing != null) {
+					htmlTable.cellSpacing(Integer.parseInt(cellspacing.getNodeValue()));
+				}
+				org.w3c.dom.Node cellpadding = attributes.getNamedItem("cellpadding");
+				if (cellpadding != null) {
+					htmlTable.cellPadding(Integer.parseInt(cellpadding.getNodeValue()));
+				}
+				org.w3c.dom.Node border = attributes.getNamedItem("border");
+				if (border != null) {
+					htmlTable.border(Integer.parseInt(border.getNodeValue()));
+				}
+				org.w3c.dom.Node height = attributes.getNamedItem("height");
+				if (height != null) {
+					htmlTable.height(Integer.parseInt(height.getNodeValue()));
+				}
+				org.w3c.dom.Node width = attributes.getNamedItem("width");
+				if (width != null) {
+					htmlTable.width(Integer.parseInt(width.getNodeValue()));
+				}
+			}
+
+			for (int j = 0; j < childNodes.getLength(); j++) {
+				org.w3c.dom.Node tr = childNodes.item(j);
+
+				String nodeName = tr.getNodeName();
+				if (!"tr".equalsIgnoreCase(nodeName)) {
+					continue;
+				}
+
+				List<Td> htmlTds = new ArrayList<>();
+				NodeList tds = tr.getChildNodes();
+				for (int k = 0; k < tds.getLength(); k++) {
+					org.w3c.dom.Node td = tds.item(k);
+					if (!"td".equalsIgnoreCase(td.getNodeName())) {
+						continue;
+					}
+
+					Td htmlTd = Html.td();
+					htmlTds.add(htmlTd);
+					NodeList childTableNodes = td.getChildNodes();
+					if (childTableNodes.getLength() > 0) {
+						parseTable(htmlTd::table, childTableNodes);
+					}
+
+					if (htmlTd.getTable() == null) {
+						String text = td.getTextContent();
+						if (text != null) {
+							htmlTd.text(text);
+						}
+					}
+
+					attributes = td.getAttributes();
+					if (attributes != null) {
+						org.w3c.dom.Node rowspan = attributes.getNamedItem("rowspan");
+						if (rowspan != null) {
+							htmlTd.rowSpan(Integer.parseInt(rowspan.getNodeValue()));
+						}
+						org.w3c.dom.Node colspan = attributes.getNamedItem("colspan");
+						if (colspan != null) {
+							htmlTd.colSpan(Integer.parseInt(colspan.getNodeValue()));
+						}
+					}
+				}
+
+				htmlTable.tr(htmlTds.toArray(new Td[0]));
+			}
+
+			tableConsumer.accept(htmlTable);
+		}
+	}
 }

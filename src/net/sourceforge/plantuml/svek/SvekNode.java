@@ -5,12 +5,12 @@
  * (C) Copyright 2009-2024, Arnaud Roques
  *
  * Project Info:  https://plantuml.com
- * 
+ *
  * If you like this project or if you find it useful, you can support us at:
- * 
+ *
  * https://plantuml.com/patreon (only 1$ per month!)
  * https://plantuml.com/paypal
- * 
+ *
  * This file is part of PlantUML.
  *
  * PlantUML is free software; you can redistribute it and/or modify it
@@ -31,11 +31,17 @@
  *
  * Original Author:  Arnaud Roques
  *
- * 
+ *
  */
 package net.sourceforge.plantuml.svek;
 
 import java.util.List;
+
+import org.graphper.api.Graphviz;
+import org.graphper.api.Html;
+import org.graphper.api.Html.Table;
+import org.graphper.api.Node.NodeBuilder;
+import org.graphper.api.attributes.NodeShapeEnum;
 
 import net.sourceforge.plantuml.StringUtils;
 import net.sourceforge.plantuml.abel.Entity;
@@ -130,8 +136,16 @@ public class SvekNode implements Positionable, Hideable {
 	}
 
 	public void appendShape(StringBuilder sb, StringBounder stringBounder) {
+		appendShape(sb, stringBounder, null);
+	}
+
+	public void appendShape(StringBuilder sb, StringBounder stringBounder, NodeBuilder nodeBuilder) {
+		if (nodeBuilder == null) {
+			throw new IllegalStateException("No NodeBuilder !!!!!!!");
+		}
+		nodeBuilder.label(uid);
 		if (type == ShapeType.RECTANGLE_HTML_FOR_PORTS) {
-			appendLabelHtmlSpecialForLink(sb, stringBounder);
+			appendLabelHtmlSpecialForLink(sb, stringBounder, nodeBuilder);
 			SvekUtils.println(sb);
 			return;
 		}
@@ -152,15 +166,19 @@ public class SvekNode implements Positionable, Hideable {
 		}
 		sb.append(uid);
 		sb.append(" [");
-		appendShapeInternal(sb);
+		appendShapeInternal(sb, nodeBuilder);
 		sb.append(",");
 		sb.append("label=\"\"");
 		sb.append(",");
 		sb.append("width=" + SvekUtils.pixelToInches(getWidth()));
+		nodeBuilder.width(getWidth() / Graphviz.PIXEL);
 		sb.append(",");
 		sb.append("height=" + SvekUtils.pixelToInches(getHeight()));
+		nodeBuilder.height(getHeight() / Graphviz.PIXEL);
 		sb.append(",");
 		sb.append("color=\"" + StringUtils.sharp000000(color) + "\"");
+		nodeBuilder.id(StringUtils.sharp000000(color));
+//		nodeBuilder.label(uid);
 		sb.append("];");
 		SvekUtils.println(sb);
 	}
@@ -266,38 +284,45 @@ public class SvekNode implements Positionable, Hideable {
 		sb.append("</TABLE>");
 	}
 
-	private void appendLabelHtmlSpecialForLink(StringBuilder sb, StringBounder stringBounder) {
+	private void appendLabelHtmlSpecialForLink(StringBuilder sb, StringBounder stringBounder, NodeBuilder nodeBuilder) {
 		final Ports ports = ((WithPorts) this.image).getPorts(stringBounder);
 
 		sb.append(uid);
 		sb.append(" [");
 		sb.append("shape=plaintext,");
+		nodeBuilder.shape(NodeShapeEnum.PLAIN);
+		nodeBuilder.fixedSize(false);
 		// sb.append("color=\"" + StringUtils.getAsHtml(color) + "\",");
+		Table table = Html.table();
 		sb.append("label=<");
 		sb.append("<TABLE BGCOLOR=\"" + StringUtils.sharp000000(color)
 				+ "\" BORDER=\"0\" CELLBORDER=\"0\" CELLSPACING=\"0\" CELLPADDING=\"0\">");
+		table.id(StringUtils.sharp000000(color)).border(0).cellBorder(0).cellPadding(0);
 		int sum = 0;
 		for (PortGeometry geom : ports.getAllPortGeometry()) {
 			final String portId = geom.getId();
 			final int missing = (int) (geom.getPosition() - sum);
 
 			sum += missing;
-			appendTr(sb, null, missing);
+			appendTr(sb, null, missing, table);
 			int intHeight = (int) geom.getHeight();
 
-			appendTr(sb, portId, intHeight);
+			appendTr(sb, portId, intHeight, table);
 			sum += intHeight;
 		}
 		final double diff = getHeight() - sum;
-		appendTr(sb, null, (int) diff);
+		appendTr(sb, null, (int) diff, table);
+		table.tr(Html.td().fixedSize(true).width(getWidth()).height(diff));
 
 		sb.append("</TABLE>");
 		sb.append(">");
 		sb.append("];");
+		nodeBuilder.id(table.getId());
+		nodeBuilder.table(table);
 		SvekUtils.println(sb);
 	}
 
-	private void appendTr(StringBuilder sb, String portId, int height) {
+	private void appendTr(StringBuilder sb, String portId, int height, Table table) {
 		if (height <= 0)
 			return;
 
@@ -310,6 +335,7 @@ public class SvekNode implements Positionable, Hideable {
 		sb.append(">");
 		sb.append("</TD>");
 		sb.append("</TR>");
+		table.tr(Html.td().fixedSize(true).width(getWidth()).height(height).id(portId));
 	}
 
 	private void appendTd(StringBuilder sb, double w, double h) {
@@ -324,26 +350,36 @@ public class SvekNode implements Positionable, Hideable {
 		sb.append("</TD>");
 	}
 
-	private void appendShapeInternal(StringBuilder sb) {
+	private void appendShapeInternal(StringBuilder sb, NodeBuilder nodeBuilder) {
 		if (type == ShapeType.RECTANGLE && shield().isZero() == false)
 			throw new UnsupportedOperationException();
 		else if (type == ShapeType.RECTANGLE || type == ShapeType.RECTANGLE_WITH_CIRCLE_INSIDE
-				|| type == ShapeType.FOLDER)
+				|| type == ShapeType.FOLDER) {
 			sb.append("shape=rect");
+			nodeBuilder.shape(NodeShapeEnum.RECT);
+		}
 		else if (type == ShapeType.RECTANGLE_HTML_FOR_PORTS)
 			throw new UnsupportedOperationException();
 		else if (type == ShapeType.OCTAGON)
 			sb.append("shape=octagon");
 		else if (type == ShapeType.HEXAGON)
 			sb.append("shape=hexagon");
-		else if (type == ShapeType.DIAMOND)
+		else if (type == ShapeType.DIAMOND) {
 			sb.append("shape=diamond");
-		else if (type == ShapeType.CIRCLE)
+			nodeBuilder.shape(NodeShapeEnum.DIAMOND);
+		}
+		else if (type == ShapeType.CIRCLE) {
 			sb.append("shape=circle");
-		else if (type == ShapeType.OVAL)
+			nodeBuilder.shape(NodeShapeEnum.CIRCLE);
+		}
+		else if (type == ShapeType.OVAL) {
 			sb.append("shape=ellipse");
-		else if (type == ShapeType.ROUND_RECTANGLE)
+			nodeBuilder.shape(NodeShapeEnum.ELLIPSE);
+		}
+		else if (type == ShapeType.ROUND_RECTANGLE) {
 			sb.append("shape=rect,style=rounded");
+			nodeBuilder.shape(NodeShapeEnum.RECT);
+		}
 		else
 			throw new IllegalStateException(type.toString());
 

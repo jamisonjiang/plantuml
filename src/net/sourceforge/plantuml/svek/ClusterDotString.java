@@ -39,8 +39,10 @@ package net.sourceforge.plantuml.svek;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Collections;
+import java.util.Deque;
 import java.util.EnumSet;
 import java.util.Iterator;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Set;
 
@@ -53,6 +55,21 @@ import net.sourceforge.plantuml.klimt.geom.HorizontalAlignment;
 import net.sourceforge.plantuml.skin.AlignmentParam;
 import net.sourceforge.plantuml.skin.UmlDiagramType;
 import net.sourceforge.plantuml.style.ISkinParam;
+import net.sourceforge.plantuml.svek.DotStringFactory.GraphvizContext;
+
+import org.graphper.api.Cluster.ClusterBuilder;
+import org.graphper.api.Cluster.IntegrationClusterBuilder;
+import org.graphper.api.GraphContainer.GraphContainerBuilder;
+import org.graphper.api.Graphviz;
+import org.graphper.api.Graphviz.GraphvizBuilder;
+import org.graphper.api.Html.Table;
+import org.graphper.api.Line;
+import org.graphper.api.Node;
+import org.graphper.api.Node.NodeBuilder;
+import org.graphper.api.Subgraph;
+import org.graphper.api.Subgraph.SubgraphBuilder;
+import org.graphper.api.attributes.NodeShapeEnum;
+import org.graphper.api.attributes.Rank;
 
 public class ClusterDotString {
 	// ::remove file when __CORE__
@@ -71,17 +88,17 @@ public class ClusterDotString {
 	}
 
 	void printInternal(StringBuilder sb, Collection<SvekLine> lines, StringBounder stringBounder, DotMode dotMode,
-			GraphvizVersion graphvizVersion, UmlDiagramType type) {
+			GraphvizVersion graphvizVersion, UmlDiagramType type, GraphvizContext graphvizContext) {
 		if (cluster.diagram.getPragma().useKermor()) {
 			new ClusterDotStringKermor(cluster, skinParam).printInternal(sb, lines, stringBounder, dotMode,
-					graphvizVersion, type);
+					graphvizVersion, type, graphvizContext);
 			return;
 		}
 		final boolean packed = isPacked();
 
 		if (packed) {
 			cluster.printCluster1(sb, lines, stringBounder);
-			final SvekNode added = cluster.printCluster2(sb, lines, stringBounder, dotMode, graphvizVersion, type);
+			final SvekNode added = cluster.printCluster2(sb, lines, stringBounder, dotMode, graphvizVersion, type, graphvizContext);
 			return;
 
 		}
@@ -92,8 +109,16 @@ public class ClusterDotString {
 		if (useProtectionWhenThereALinkFromOrToGroup == false)
 			thereALinkFromOrToGroup1 = false;
 
-		if (thereALinkFromOrToGroup1)
+		Deque<ClusterBuilder> clusterStack = new LinkedList<>();
+		ClusterBuilder currentCluster;
+		ClusterBuilder thereALinkFromOrToGroup1Cluster_1 = null;
+		if (thereALinkFromOrToGroup1) {
 			subgraphClusterNoLabel(sb, "a");
+			thereALinkFromOrToGroup1Cluster_1 = org.graphper.api.Cluster
+							.builder().id(cluster.getClusterId() + "a");
+			currentCluster = thereALinkFromOrToGroup1Cluster_1;
+			clusterStack.offerLast(currentCluster);
+		}
 
 		final Set<EntityPosition> entityPositionsExceptNormal = entityPositionsExceptNormal();
 		if (entityPositionsExceptNormal.size() > 0)
@@ -108,61 +133,122 @@ public class ClusterDotString {
 			protection1 = false;
 		}
 
-		if (protection0)
+		ClusterBuilder protection0Cluster = null;
+		if (protection0) {
+			protection0Cluster = org.graphper.api.Cluster.builder();
+			currentCluster = protection0Cluster;
+			clusterStack.offerLast(currentCluster);
 			subgraphClusterNoLabel(sb, "p0");
+			protection0Cluster.id(cluster.getClusterId() + "p0").label("");
+		}
+
+		currentCluster = org.graphper.api.Cluster.builder();
+		clusterStack.offerLast(currentCluster);
 
 		sb.append("subgraph " + cluster.getClusterId() + " {");
 		sb.append("style=solid;");
 		sb.append("color=\"" + StringUtils.sharp000000(cluster.getColor()) + "\";");
+		currentCluster.id(StringUtils.sharp000000(cluster.getColor()));
 
 		final String label;
+		Table table;
 		if (cluster.isLabel()) {
 			final StringBuilder sblabel = new StringBuilder("<");
-			SvekLine.appendTable(sblabel, cluster.getTitleAndAttributeWidth(), cluster.getTitleAndAttributeHeight() - 5,
-					cluster.getTitleColor());
+			table = SvekLine.appendTable(sblabel, cluster.getTitleAndAttributeWidth(),
+			                                   cluster.getTitleAndAttributeHeight() - 5,
+			                                   cluster.getTitleColor());
 			sblabel.append(">");
 			label = sblabel.toString();
 			final HorizontalAlignment align = skinParam.getHorizontalAlignment(AlignmentParam.packageTitleAlignment,
 					null, false, null);
 			sb.append("labeljust=\"" + align.getGraphVizValue() + "\";");
+			currentCluster.labeljust(GraphSupportHelper.toLabeljust(align.getGraphVizValue()));
 		} else {
 			label = "\"\"";
+			table = null;
 		}
 
 		if (entityPositionsExceptNormal.size() > 0) {
-			printRanks(Cluster.RANK_SOURCE, withPosition(EntityPosition.getInputs()), sb, stringBounder);
-			printRanks(Cluster.RANK_SINK, withPosition(EntityPosition.getOutputs()), sb, stringBounder);
+			GraphContainerBuilder p = graphvizContext.getCurrentBuilder();
+			graphvizContext.setCurrentBuilder(currentCluster);
+			printRanks(Cluster.RANK_SOURCE, withPosition(EntityPosition.getInputs()), sb, stringBounder, graphvizContext);
+			printRanks(Cluster.RANK_SINK, withPosition(EntityPosition.getOutputs()), sb, stringBounder, graphvizContext);
+			graphvizContext.setCurrentBuilder(p);
+			currentCluster = org.graphper.api.Cluster.builder();
+			clusterStack.offerLast(currentCluster);
 			if (hasPort())
 				subgraphClusterNoLabel(sb, ID_EE);
-			else
+			else {
 				subgraphClusterWithLabel(sb, ID_EE, label);
+				currentCluster.table(table);
+			}
 
+			currentCluster.id(cluster.getClusterId() + ID_EE);
 		} else {
+			currentCluster.table(table);
 			sb.append("label=" + label + ";");
 			SvekUtils.println(sb);
 		}
 
-		if (thereALinkFromOrToGroup2)
-			sb.append(Cluster.getSpecialPointId(cluster.getGroup()) + " [shape=point,width=.01,label=\"\"];");
+		if (thereALinkFromOrToGroup2) {
+			String id = Cluster.getSpecialPointId(cluster.getGroup());
+			sb.append(id + " [shape=point,width=.01,label=\"\"];");
+			Node n = graphvizContext.getIfAbsent(id, s -> Node.builder()
+							.id(id).shape(NodeShapeEnum.POINT).width(.01).height(.01)
+							.margin(0, 0).build());
+			currentCluster.addNode(n);
+		}
 
-		if (thereALinkFromOrToGroup1)
+		ClusterBuilder thereALinkFromOrToGroup1Cluster_2 = null;
+		if (thereALinkFromOrToGroup1) {
+			thereALinkFromOrToGroup1Cluster_2 = org.graphper.api.Cluster.builder();
+			currentCluster = thereALinkFromOrToGroup1Cluster_2;
+			clusterStack.offerLast(currentCluster);
 			subgraphClusterNoLabel(sb, "i");
+			currentCluster.id(cluster.getClusterId() + "i");
 
-		if (protection1)
+//			sb.append("subgraph " + cluster.getClusterId() + id + " {");
+//			sb.append("label=" + label + ";");
+		}
+
+		ClusterBuilder protection1Cluster = null;
+		if (protection1) {
 			subgraphClusterNoLabel(sb, "p1");
+			protection1Cluster = org.graphper.api.Cluster.builder();
+			currentCluster = protection1Cluster;
+			clusterStack.offerLast(currentCluster);
+			protection1Cluster.id(cluster.getClusterId() + "p1");
+		}
 
 		if (skinParam.useSwimlanes(type)) {
+			SubgraphBuilder subgraph = Subgraph.builder();
 			sb.append("{rank = source; ");
-			sb.append(getSourceInPoint(type));
+			subgraph.rank(Rank.SOURCE);
+			String sourceInPoint = getSourceInPoint(type);
+			sb.append(sourceInPoint);
 			sb.append(" [shape=point,width=.01,label=\"\"];");
-			sb.append(cluster.getMinPoint(type) + "->" + getSourceInPoint(type) + "  [weight=999];");
+			Node sip = Node.builder().id(sourceInPoint).shape(NodeShapeEnum.POINT).width(0.01).build();
+
+			String minPoint = cluster.getMinPoint(type);
+			sb.append(minPoint + "->" + getSourceInPoint(type) + "  [weight=999];");
+			subgraph.addLine(Line.builder(Node.builder().label(minPoint).build(), sip).weight(999).build());
 			sb.append("}");
+			currentCluster.subgraph(subgraph.build());
 			SvekUtils.println(sb);
+			subgraph = Subgraph.builder();
 			sb.append("{rank = sink; ");
-			sb.append(getSinkInPoint(type));
+			subgraph.rank(Rank.SINK);
+			String sinkInPoint = getSinkInPoint(type);
+			sb.append(sinkInPoint);
 			sb.append(" [shape=point,width=.01,label=\"\"];");
+			Node sinkP = Node.builder().id(sinkInPoint).shape(NodeShapeEnum.POINT).width(0.01).build();
+			subgraph.addNode(sinkP);
 			sb.append("}");
-			sb.append(getSinkInPoint(type) + "->" + cluster.getMaxPoint(type) + "  [weight=999];");
+			currentCluster.subgraph(subgraph.build());
+
+			String maxPoint = cluster.getMaxPoint(type);
+			sb.append(getSinkInPoint(type) + "->" + maxPoint + "  [weight=999];");
+			currentCluster.addLine(Line.builder(sinkP, Node.builder().id(maxPoint).label(maxPoint).build()).weight(999).build());
 			SvekUtils.println(sb);
 		}
 		SvekUtils.println(sb);
@@ -170,7 +256,10 @@ public class ClusterDotString {
 		// -----------
 		cluster.printCluster1(sb, lines, stringBounder);
 
-		final SvekNode added = cluster.printCluster2(sb, lines, stringBounder, dotMode, graphvizVersion, type);
+		GraphContainerBuilder parent = graphvizContext.getCurrentBuilder();
+		graphvizContext.setCurrentBuilder(currentCluster);
+		final SvekNode added = cluster.printCluster2(sb, lines, stringBounder, dotMode, graphvizVersion, type, graphvizContext);
+		graphvizContext.setCurrentBuilder(parent);
 		if (entityPositionsExceptNormal.size() > 0)
 			if (hasPort()) {
 				sb.append(empty() + " [shape=rect,width=.01,height=.01,label=");
@@ -184,8 +273,10 @@ public class ClusterDotString {
 		// -----------
 
 		sb.append("}");
-		if (protection1)
+		if (protection1) {
 			sb.append("}");
+		}
+
 
 		if (thereALinkFromOrToGroup1) {
 			sb.append("}");
@@ -194,8 +285,20 @@ public class ClusterDotString {
 		if (entityPositionsExceptNormal.size() > 0)
 			sb.append("}");
 
-		if (protection0)
+		if (protection0) {
 			sb.append("}");
+		}
+
+		org.graphper.api.Cluster child = null;
+		while (!clusterStack.isEmpty()) {
+			currentCluster = clusterStack.pollLast();
+			if (child != null) {
+				currentCluster.cluster(child);
+			}
+			child = currentCluster.build();
+		}
+
+		graphvizContext.getCurrentBuilder().cluster(currentCluster.build());
 
 		SvekUtils.println(sb);
 	}
@@ -249,18 +352,26 @@ public class ClusterDotString {
 	}
 
 	private void printRanks(String rank, List<? extends SvekNode> entries, StringBuilder sb,
-			StringBounder stringBounder) {
+			StringBounder stringBounder, GraphvizContext graphvizContext) {
 		if (entries.size() > 0) {
+			SvekUtils.println(sb);
+			for (SvekNode sh2 : entries) {
+				NodeBuilder node = Node.builder().fixedSize(true);
+				sh2.appendShape(sb, stringBounder, node);
+				graphvizContext.getCurrentBuilder().addNode(node.build());
+			}
+			SvekUtils.println(sb);
+
+			SubgraphBuilder subgraphBuilder = Subgraph.builder();
 			sb.append("{rank=" + rank + ";");
-			for (SvekNode sh1 : entries)
+			subgraphBuilder.rank(GraphSupportHelper.toRank(rank));
+			for (SvekNode sh1 : entries) {
 				sb.append(sh1.getUid() + ";");
-
+				Node node = graphvizContext.getIfAbsent(sh1.getUid(), s -> Node.builder().build());
+				subgraphBuilder.addNode(node);
+			}
 			sb.append("}");
-			SvekUtils.println(sb);
-			for (SvekNode sh2 : entries)
-				sh2.appendShape(sb, stringBounder);
 
-			SvekUtils.println(sb);
 			if (hasPort()) {
 				boolean arrow = false;
 				String node = null;

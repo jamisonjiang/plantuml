@@ -5,12 +5,12 @@
  * (C) Copyright 2009-2024, Arnaud Roques
  *
  * Project Info:  https://plantuml.com
- * 
+ *
  * If you like this project or if you find it useful, you can support us at:
- * 
+ *
  * https://plantuml.com/patreon (only 1$ per month!)
  * https://plantuml.com/paypal
- * 
+ *
  * This file is part of PlantUML.
  *
  * PlantUML is free software; you can redistribute it and/or modify it
@@ -32,7 +32,7 @@
  * Original Author:  Arnaud Roques
  * Contribution :  Hisashi Miyashita
  * Contribution :  Serge Wenger
- * 
+ *
  *
  */
 package net.sourceforge.plantuml.svek;
@@ -45,6 +45,9 @@ import java.util.List;
 import java.util.Map;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+
+import org.graphper.api.Graphviz;
+import org.graphper.api.Graphviz.GraphvizBuilder;
 
 import net.atmp.InnerStrategy;
 import net.sourceforge.plantuml.OptionFlags;
@@ -453,11 +456,16 @@ public final class GeneralImageBuilder {
 			basefile = new BaseFile(null);
 
 		final String svg;
+		GraphvizBuilder digraph = Graphviz.digraph();
 		try {
-			svg = dotStringFactory.getSvg(basefile, dotStrings);
-		} catch (IOException e) {
-			return new GraphvizCrash(source.getPlainString(BackSlash.lineSeparator()),
-					GraphvizUtils.graphviz244onWindows(), e);
+			svg = dotStringFactory.getSvg(basefile, dotStrings, digraph);
+			System.out.println(digraph.build().toSvgStr());
+			System.out.println();
+			System.out.println();
+		} catch (Exception e) {
+			throw new RuntimeException(e);
+//			return new GraphvizCrash(source.getPlainString(BackSlash.lineSeparator()),
+//					GraphvizUtils.graphviz244onWindows(), e);
 		}
 		if (svg.length() == 0)
 			return new GraphvizCrash(source.getPlainString(BackSlash.lineSeparator()),
@@ -465,7 +473,8 @@ public final class GeneralImageBuilder {
 
 		final String graphvizVersion = extractGraphvizVersion(svg);
 		try {
-			dotStringFactory.solve(dotData.getEntityFactory(), svg);
+//			dotStringFactory.solve(dotData.getEntityFactory(), svg);
+			dotStringFactory.solve0(digraph.build());
 			final SvekResult result = new SvekResult(dotData, dotStringFactory);
 			this.maxX = dotStringFactory.getBibliotekon().getMaxX();
 			return result;

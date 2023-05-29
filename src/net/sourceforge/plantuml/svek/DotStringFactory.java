@@ -5,12 +5,12 @@
  * (C) Copyright 2009-2024, Arnaud Roques
  *
  * Project Info:  https://plantuml.com
- * 
+ *
  * If you like this project or if you find it useful, you can support us at:
- * 
+ *
  * https://plantuml.com/patreon (only 1$ per month!)
  * https://plantuml.com/paypal
- * 
+ *
  * This file is part of PlantUML.
  *
  * PlantUML is free software; you can redistribute it and/or modify it
@@ -31,7 +31,7 @@
  *
  * Original Author:  Arnaud Roques
  *
- * 
+ *
  */
 package net.sourceforge.plantuml.svek;
 
@@ -40,8 +40,19 @@ import static java.nio.charset.StandardCharsets.UTF_8;
 import java.io.ByteArrayOutputStream;
 import java.io.File;
 import java.io.IOException;
+import java.io.InputStream;
+import java.io.ObjectInputStream;
+import java.io.ObjectOutputStream;
+import java.io.OutputStream;
+import java.nio.file.Files;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
+import java.util.function.Function;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -66,6 +77,23 @@ import net.sourceforge.plantuml.style.ISkinParam;
 import net.sourceforge.plantuml.utils.Position;
 import net.sourceforge.plantuml.vizjs.GraphvizJs;
 import net.sourceforge.plantuml.vizjs.GraphvizJsRuntimeException;
+
+import org.graphper.api.GraphContainer.GraphContainerBuilder;
+import org.graphper.api.Graphviz.GraphvizBuilder;
+import org.graphper.api.LineAttrs;
+import org.graphper.api.Node;
+import org.graphper.api.attributes.Color;
+import org.graphper.api.attributes.Layout;
+import org.graphper.api.attributes.Splines;
+import org.graphper.def.FlatPoint;
+import org.graphper.draw.ClusterDrawProp;
+import org.graphper.draw.DrawGraph;
+import org.graphper.draw.ExecuteException;
+import org.graphper.draw.LineDrawProp;
+import org.graphper.draw.NodeDrawProp;
+import org.graphper.draw.RenderEngine;
+import org.graphper.layout.CombineShifter;
+import org.graphper.layout.FlatShifterStrategy;
 
 public class DotStringFactory implements Moveable {
 
@@ -136,8 +164,9 @@ public class DotStringFactory implements Moveable {
 	}
 
 	// ::comment when __CORE__
-	String createDotString(String... dotStrings) {
+	String createDotString(GraphvizBuilder graphBuilder, String... dotStrings) {
 		final StringBuilder sb = new StringBuilder();
+		GraphvizContext graphvizContext = new GraphvizContext(graphBuilder);
 
 		double nodesep = getHorizontalDzeta();
 		if (nodesep < getMinNodeSep())
@@ -161,10 +190,14 @@ public class DotStringFactory implements Moveable {
 		SvekUtils.println(sb);
 
 		for (String s : dotStrings) {
-			if (s.startsWith("ranksep"))
+			if (s.startsWith("ranksep")) {
 				sb.append("ranksep=" + ranksepInches + ";");
-			else if (s.startsWith("nodesep"))
+				graphBuilder.rankSep(Double.parseDouble(ranksepInches));
+			}
+			else if (s.startsWith("nodesep")) {
 				sb.append("nodesep=" + nodesepInches + ";");
+				graphBuilder.nodeSep(Double.parseDouble(nodesepInches));
+			}
 			else
 				sb.append(s);
 
@@ -175,6 +208,7 @@ public class DotStringFactory implements Moveable {
 		sb.append("remincross=true;");
 		SvekUtils.println(sb);
 		sb.append("searchsize=500;");
+		graphBuilder.nslimit1(500);
 		SvekUtils.println(sb);
 		// if (OptionFlags.USE_COMPOUND) {
 		// sb.append("compound=true;");
@@ -185,39 +219,42 @@ public class DotStringFactory implements Moveable {
 		if (dotSplines == DotSplines.POLYLINE) {
 			sb.append("splines=polyline;");
 			SvekUtils.println(sb);
+			graphBuilder.splines(Splines.POLYLINE);
 		} else if (dotSplines == DotSplines.ORTHO) {
 			sb.append("splines=ortho;");
 			sb.append("forcelabels=true;");
 			SvekUtils.println(sb);
+			graphBuilder.splines(Splines.ORTHO);
 		}
 
 		if (skinParam.getRankdir() == Rankdir.LEFT_TO_RIGHT) {
 			sb.append("rankdir=LR;");
 			SvekUtils.println(sb);
+			graphBuilder.rankdir(org.graphper.api.attributes.Rankdir.LR);
 		}
 
 		manageMinMaxCluster(sb);
 
 		if (root.diagram.getPragma().useKermor()) {
 			for (SvekLine line : bibliotekon.lines0())
-				line.appendLine(getGraphvizVersion(), sb, dotMode, dotSplines);
+				line.appendLine(getGraphvizVersion(), sb, dotMode, dotSplines, graphvizContext);
 			for (SvekLine line : bibliotekon.lines1())
-				line.appendLine(getGraphvizVersion(), sb, dotMode, dotSplines);
+				line.appendLine(getGraphvizVersion(), sb, dotMode, dotSplines, graphvizContext);
 
 			root.printCluster3_forKermor(sb, bibliotekon.allLines(), stringBounder, dotMode, getGraphvizVersion(),
-					umlDiagramType);
+					umlDiagramType, graphvizContext);
 
 		} else {
 			root.printCluster1(sb, bibliotekon.allLines(), stringBounder);
 
-			for (SvekLine line : bibliotekon.lines0())
-				line.appendLine(getGraphvizVersion(), sb, dotMode, dotSplines);
-
 			root.printCluster2(sb, bibliotekon.allLines(), stringBounder, dotMode, getGraphvizVersion(),
-					umlDiagramType);
+			                   umlDiagramType, graphvizContext);
+
+			for (SvekLine line : bibliotekon.lines0())
+				line.appendLine(getGraphvizVersion(), sb, dotMode, dotSplines, graphvizContext);
 
 			for (SvekLine line : bibliotekon.lines1())
-				line.appendLine(getGraphvizVersion(), sb, dotMode, dotSplines);
+				line.appendLine(getGraphvizVersion(), sb, dotMode, dotSplines, graphvizContext);
 
 		}
 
@@ -305,8 +342,9 @@ public class DotStringFactory implements Moveable {
 		return GraphvizVersions.getInstance().getVersion(f);
 	}
 
-	public String getSvg(BaseFile basefile, String[] dotOptions) throws IOException {
-		String dotString = createDotString(dotOptions);
+	public String getSvg(BaseFile basefile, String[] dotOptions, GraphvizBuilder graphvizBuilder) throws IOException {
+		String dotString = createDotString(graphvizBuilder, dotOptions);
+		System.out.println(dotString);
 
 		if (basefile != null) {
 			final SFile f = basefile.getTraceFile("svek.dot");
@@ -324,7 +362,8 @@ public class DotStringFactory implements Moveable {
 		} catch (GraphvizJsRuntimeException e) {
 			System.err.println("GraphvizJsRuntimeException");
 			graphvizVersion = GraphvizJs.getGraphvizVersion(true);
-			dotString = createDotString(dotOptions);
+			graphvizBuilder = org.graphper.api.Graphviz.digraph();
+			dotString = createDotString(graphvizBuilder, dotOptions);
 			graphviz = GraphvizUtils.create(skinParam, dotString, "svg");
 			baos = new ByteArrayOutputStream();
 			final ProcessState state = graphviz.createFile3(baos);
@@ -334,7 +373,7 @@ public class DotStringFactory implements Moveable {
 
 		}
 		final byte[] result = baos.toByteArray();
-		final String s = new String(result, UTF_8);
+		String s = new String(result, UTF_8);
 
 		if (basefile != null) {
 			final SFile f = basefile.getTraceFile("svek.svg");
@@ -362,23 +401,31 @@ public class DotStringFactory implements Moveable {
 		if (svg.length() == 0)
 			throw new EmptySvgException();
 
-		final Pattern pGraph = Pattern.compile("(?m)\\<svg\\s+width=\"(\\d+)pt\"\\s+height=\"(\\d+)pt\"");
-		final Matcher mGraph = pGraph.matcher(svg);
-		if (mGraph.find() == false)
+		Pattern pGraph = Pattern.compile("(?m)\\<svg\\s+width=\"(\\d+)pt\"\\s+height=\"(\\d+)pt\"");
+		Matcher mGraph = pGraph.matcher(svg);
+		if (mGraph.find() == false) {
 			throw new IllegalStateException();
+		}
 
-		final int fullHeight = Integer.parseInt(mGraph.group(2));
+		int fullHeight = Integer.parseInt(mGraph.group(2));
 
 		final Point2DFunction move = new YDelta(fullHeight);
+		final SvgResult ss = new SvgResult(svg, new YDelta(0));
 		final SvgResult svgResult = new SvgResult(svg, move);
 		for (SvekNode node : bibliotekon.allNodes()) {
 			int idx = svg.indexOf("<title>" + node.getUid() + "</title>");
 			if (node.getType() == ShapeType.RECTANGLE || node.getType() == ShapeType.RECTANGLE_HTML_FOR_PORTS
-					|| node.getType() == ShapeType.RECTANGLE_WITH_CIRCLE_INSIDE || node.getType() == ShapeType.FOLDER
-					|| node.getType() == ShapeType.DIAMOND || node.getType() == ShapeType.RECTANGLE_PORT) {
+							|| node.getType() == ShapeType.RECTANGLE_WITH_CIRCLE_INSIDE || node.getType() == ShapeType.FOLDER
+							|| node.getType() == ShapeType.DIAMOND || node.getType() == ShapeType.RECTANGLE_PORT) {
+
+				final List<XPoint2D> p = ss.substring(idx).extractList(SvgResult.POINTS_EQUALS);
+				final XPoint2D m = SvekUtils.getMinXY(p);
+				System.out.println("graphviz before " + node.getUid() + " " + m);
+
 				final List<XPoint2D> points = svgResult.substring(idx).extractList(SvgResult.POINTS_EQUALS);
 				final XPoint2D min = SvekUtils.getMinXY(points);
 				node.moveSvek(min.getX(), min.getY());
+				System.out.println("graphviz after " + node.getUid() + " " + min);
 			} else if (node.getType() == ShapeType.ROUND_RECTANGLE) {
 				final int idx2 = svg.indexOf("d=\"", idx + 1);
 				idx = svg.indexOf("points=\"", idx + 1);
@@ -417,7 +464,7 @@ public class DotStringFactory implements Moveable {
 		for (Cluster cluster : bibliotekon.allCluster()) {
 			if (cluster.getGroup().isPacked())
 				continue;
-			
+
 			int idx = getClusterIndex(svg, cluster.getColor());
 			final int starting = idx;
 			final List<XPoint2D> points = svgResult.substring(starting).extractList(SvgResult.POINTS_EQUALS);
@@ -435,23 +482,114 @@ public class DotStringFactory implements Moveable {
 			if (root.diagram.getPragma().useKermor()) {
 				if (cluster.getGroup().getNotes(Position.TOP).size() > 0) {
 					final List<XPoint2D> noteUp = svgResult.substring(getClusterIndex(svg, cluster.getColorNoteTop()))
-							.extractList(SvgResult.POINTS_EQUALS);
+									.extractList(SvgResult.POINTS_EQUALS);
 					cluster.setNoteTopPosition(SvekUtils.getMinXY(noteUp));
 				}
 				if (cluster.getGroup().getNotes(Position.BOTTOM).size() > 0) {
 					final List<XPoint2D> noteBottom = svgResult
-							.substring(getClusterIndex(svg, cluster.getColorNoteBottom()))
-							.extractList(SvgResult.POINTS_EQUALS);
+									.substring(getClusterIndex(svg, cluster.getColorNoteBottom()))
+									.extractList(SvgResult.POINTS_EQUALS);
 					cluster.setNoteBottomPosition(SvekUtils.getMinXY(noteBottom));
 				}
 			}
 		}
 
 		for (SvekLine line : bibliotekon.allLines())
-			line.solveLine(svgResult);
+			line.solveLine(svgResult, ss);
 
-		for (SvekLine line : bibliotekon.allLines())
-			line.manageCollision(bibliotekon.allNodes());
+//		for (SvekLine line : bibliotekon.allLines())
+//			line.manageCollision(bibliotekon.allNodes());
+
+	}
+
+	public void solve0(org.graphper.api.Graphviz graphviz) throws IOException, InterruptedException {
+		File file = new File("E:\\tmp\\graph1");
+
+		try (OutputStream os = Files.newOutputStream(file.toPath());
+						ObjectOutputStream oos = new ObjectOutputStream(os)) {
+			oos.writeObject(graphviz);
+		}
+		DrawGraph drawGraph = Layout.DOT.getLayoutEngine().layout(graphviz);
+		CombineShifter shifter = new CombineShifter(new HashSet<>(),
+		                                                   Collections.singletonList(new FlatShifterStrategy(-drawGraph.getMinX(), -drawGraph.getMinY())));
+		shifter.graph(drawGraph.getGraphvizDrawProp());
+		drawGraph.clusters().forEach(shifter::cluster);
+		drawGraph.nodes().forEach(shifter::node);
+		drawGraph.lines().forEach(shifter::line);
+		int fullHeight = (int) drawGraph.getHeight();
+
+		Map<String, NodeDrawProp> nodeDrawPropMap = new HashMap<>();
+		for (NodeDrawProp node : drawGraph.nodes()) {
+			nodeDrawPropMap.put(node.nodeAttrs().getLabel(), node);
+		}
+
+		final Point2DFunction move = new YDelta(fullHeight);
+//		final Point2DFunction move = new YDelta(0);
+		for (SvekNode node : bibliotekon.allNodes()) {
+			String uid = node.getUid();
+			NodeDrawProp nodeProp = nodeDrawPropMap.get(uid);
+			if (nodeProp == null) {
+				continue;
+			}
+			XPoint2D xPoint2D = new XPoint2D(nodeProp.getLeftBorder(), nodeProp.getUpBorder());
+//			System.out.println("graph support before " + node.getUid() + " " + xPoint2D);
+			xPoint2D = move.apply(xPoint2D);
+//			System.out.println("graph support after " + node.getUid() + " " + xPoint2D);
+			node.moveSvek(xPoint2D.getX(), xPoint2D.getY());
+		}
+
+		Map<String, ClusterDrawProp> clusterMap = null;
+		for (ClusterDrawProp cluster : drawGraph.clusters()) {
+			if (clusterMap == null) {
+				clusterMap = new HashMap<>();
+			}
+
+			clusterMap.put(drawGraph.clusterId(cluster.getCluster()), cluster);
+		}
+
+		for (Cluster cluster : bibliotekon.allCluster()) {
+			if (clusterMap == null) {
+				continue;
+			}
+
+			int color = cluster.getColor();
+			String id = StringUtils.sharp000000(color);
+			ClusterDrawProp clusterDrawProp = clusterMap.get(id);
+			if (clusterDrawProp == null) {
+				continue;
+			}
+
+			XPoint2D min = new XPoint2D(clusterDrawProp.getLeftBorder(), clusterDrawProp.getUpBorder());
+			XPoint2D max = new XPoint2D(clusterDrawProp.getRightBorder(), clusterDrawProp.getDownBorder());
+			min = move.apply(min);
+			max = move.apply(max);
+			cluster.setPosition(min, max);
+
+			FlatPoint labelCenter = clusterDrawProp.getLabelCenter();
+			if (labelCenter == null) {
+				continue;
+			}
+
+			cluster.setTitlePosition(move.apply(new XPoint2D(labelCenter.getX(), labelCenter.getY())));
+		}
+
+		Map<String, LineDrawProp> lineDrawPropMap = new HashMap<>();
+		for (LineDrawProp line : drawGraph.lines()) {
+			LineAttrs lineAttrs = line.lineAttrs();
+			Color color = lineAttrs.getColor();
+			if (color == null) {
+				continue;
+			}
+			lineDrawPropMap.put(color.value(), line);
+		}
+		for (SvekLine line : bibliotekon.allLines()) {
+			line.solveLine0(move, lineDrawPropMap);
+//			line.solveLine(svgResult);
+		}
+
+//		for (SvekLine line : bibliotekon.allLines()) {
+//			line.manageCollision(bibliotekon.allNodes());
+//		}
 
 	}
 
@@ -502,4 +640,31 @@ public class DotStringFactory implements Moveable {
 		return colorSequence;
 	}
 
+
+	public static class GraphvizContext {
+		public GraphvizBuilder graphvizBuilder;
+
+		private Map<String, Node> nodeMap;
+
+		private GraphContainerBuilder currentBuilder;
+
+		public GraphvizContext(GraphvizBuilder graphvizBuilder) {
+			this.graphvizBuilder = graphvizBuilder;
+		}
+
+		public Node getIfAbsent(String nodeId, Function<String, Node> nodeFunction) {
+			if (nodeMap == null) {
+				nodeMap = new HashMap<>();
+			}
+			return nodeMap.computeIfAbsent(nodeId, nodeFunction);
+		}
+
+		public GraphContainerBuilder getCurrentBuilder() {
+			return currentBuilder != null ? currentBuilder : graphvizBuilder;
+		}
+
+		public void setCurrentBuilder(GraphContainerBuilder currentBuilder) {
+			this.currentBuilder = currentBuilder;
+		}
+	}
 }
